@@ -128,9 +128,8 @@ base_hoje <- pmap_dfr(
 # ------------------------------------------------------------
 
 gs4_auth(
-  email = "assistaaumfilme@gmail.com",
-  scopes = "https://www.googleapis.com/auth/spreadsheets",
-  cache = ".gs4_token"
+  path = "service-account.json",
+  scopes = "https://www.googleapis.com/auth/spreadsheets"
 )
 
 # ------------------------------------------------------------

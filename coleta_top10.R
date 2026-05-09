@@ -98,8 +98,8 @@ pegar_top10_movies <- function(plataforma_nome, url) {
   )
   
   resultado <- tibble(
-    Data = format(Sys.Date(), "%d/%m/%Y"),
-    Horario = format(Sys.time(), "%H:%M"),
+    Data = format(Sys.time(), tz = "America/Sao_Paulo", format = "%d/%m/%Y"),
+    Horario = format(Sys.time(), tz = "America/Sao_Paulo", format = "%H:%M"),
     Streaming = plataforma_nome
   ) |>
     bind_cols(

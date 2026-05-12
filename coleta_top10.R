@@ -1,5 +1,5 @@
 # Instalar pacotes se ainda não tiver
-# install.packages(c("rvest", "dplyr", "stringr", "tibble", "purrr", "readr", "lubridate", "googlesheets4", "gargle"))
+# install.packages(c("rvest", "dplyr", "stringr", "tibble", "purrr", "readr", "lubridate", "googlesheets4", "gargle", "httr"))
 
 library(rvest)
 library(dplyr)
@@ -10,6 +10,7 @@ library(readr)
 library(lubridate)
 library(googlesheets4)
 library(gargle)
+library(httr)
 
 # ------------------------------------------------------------
 # 1. CONFIGURAÇÕES
@@ -27,13 +28,70 @@ plataformas <- tibble(
   )
 )
 
+nomes_posicoes <- c(
+  "Primeiro", "Segundo", "Terceiro", "Quarto", "Quinto",
+  "Sexto", "Sétimo", "Oitavo", "Nono", "Décimo"
+)
+
+linha_vazia <- function(plataforma_nome) {
+  tibble(
+    Data = format(Sys.time(), tz = "America/Sao_Paulo", format = "%d/%m/%Y"),
+    Horario = format(Sys.time(), tz = "America/Sao_Paulo", format = "%H:%M"),
+    Streaming = plataforma_nome
+  ) |>
+    bind_cols(
+      as_tibble(
+        setNames(
+          as.list(rep(NA_character_, 10)),
+          nomes_posicoes
+        )
+      )
+    )
+}
+
 # ------------------------------------------------------------
 # 2. FUNÇÃO PARA PEGAR TOP 10 MOVIES
 # ------------------------------------------------------------
 
 pegar_top10_movies <- function(plataforma_nome, url) {
   
-  page <- read_html(url)
+  message("Coletando: ", plataforma_nome)
+  
+  page <- NULL
+  
+  for (tentativa in 1:3) {
+    
+    tentativa_resultado <- tryCatch({
+      
+      resposta <- httr::GET(
+        url,
+        httr::user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+        httr::timeout(30)
+      )
+      
+      httr::stop_for_status(resposta)
+      
+      html <- httr::content(resposta, as = "text", encoding = "UTF-8")
+      page <- read_html(html)
+      
+      TRUE
+      
+    }, error = function(e) {
+      message("Tentativa ", tentativa, " falhou para ", plataforma_nome, ": ", e$message)
+      FALSE
+    })
+    
+    if (tentativa_resultado) {
+      break
+    }
+    
+    Sys.sleep(5)
+  }
+  
+  if (is.null(page)) {
+    warning(paste("Não consegui acessar:", plataforma_nome))
+    return(linha_vazia(plataforma_nome))
+  }
   
   tabela_movies_node <- page |>
     html_element(
@@ -42,7 +100,7 @@ pegar_top10_movies <- function(plataforma_nome, url) {
   
   if (length(tabela_movies_node) == 0 || is.na(tabela_movies_node)) {
     warning(paste("Não encontrei TOP 10 Movies para", plataforma_nome))
-    return(tibble())
+    return(linha_vazia(plataforma_nome))
   }
   
   movies <- tabela_movies_node |>
@@ -53,18 +111,19 @@ pegar_top10_movies <- function(plataforma_nome, url) {
   movies <- movies |>
     slice(1:10)
   
-  # Junta a linha inteira para facilitar a extração de dias no Top 10
+  if (nrow(movies) == 0) {
+    warning(paste("Tabela vazia para", plataforma_nome))
+    return(linha_vazia(plataforma_nome))
+  }
+  
   linha_completa <- apply(movies, 1, paste, collapse = " ")
   linha_completa <- str_squish(linha_completa)
   
-  # Rank: normalmente está na primeira coluna
   rank <- as.character(movies[[1]]) |>
     str_extract("[0-9]+")
   
-  # Se por algum motivo não vier rank, usa 1:10
   rank[is.na(rank)] <- as.character(seq_len(length(rank))[is.na(rank)])
   
-  # Mudança de posição: normalmente está na segunda coluna
   mudanca <- as.character(movies[[2]]) |>
     str_squish() |>
     str_replace_all("−", "-") |>
@@ -72,30 +131,29 @@ pegar_top10_movies <- function(plataforma_nome, url) {
   
   mudanca[mudanca == "" | is.na(mudanca)] <- "0"
   
-  # Dias no top 10: procura padrão tipo "8 d", "1 d", etc.
   dias <- linha_completa |>
     str_extract("[0-9]+\\s*d") |>
     str_replace_all("\\s+", "")
   
   dias[is.na(dias)] <- "0d"
   
-  # Título: normalmente está na terceira coluna
   titulo <- as.character(movies[[3]]) |>
     str_squish() |>
     str_remove("\\s+[0-9]+\\s*d$") |>
     str_squish()
   
-  # Monta texto final de cada posição
   posicoes <- paste0(
     rank, ". ",
     titulo,
     " (", mudanca, "; ", dias, ")"
   )
   
-  nomes_posicoes <- c(
-    "Primeiro", "Segundo", "Terceiro", "Quarto", "Quinto",
-    "Sexto", "Sétimo", "Oitavo", "Nono", "Décimo"
-  )
+  # Garante que sempre teremos 10 colunas
+  if (length(posicoes) < 10) {
+    posicoes <- c(posicoes, rep(NA_character_, 10 - length(posicoes)))
+  }
+  
+  posicoes <- posicoes[1:10]
   
   resultado <- tibble(
     Data = format(Sys.time(), tz = "America/Sao_Paulo", format = "%d/%m/%Y"),
@@ -106,13 +164,14 @@ pegar_top10_movies <- function(plataforma_nome, url) {
       as_tibble(
         setNames(
           as.list(posicoes),
-          nomes_posicoes[seq_along(posicoes)]
+          nomes_posicoes
         )
       )
     )
   
   return(resultado)
 }
+
 # ------------------------------------------------------------
 # 3. COLETAR DADOS
 # ------------------------------------------------------------
@@ -122,6 +181,7 @@ base_hoje <- pmap_dfr(
   ~ pegar_top10_movies(..1, ..2)
 )
 
+print(base_hoje)
 
 # ------------------------------------------------------------
 # 4. AUTENTICAR GOOGLE SHEETS

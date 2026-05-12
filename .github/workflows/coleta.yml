@@ -30,7 +30,7 @@ jobs:
       - name: Instalar pacotes do R
         run: |
           Rscript -e 'install.packages("pak", repos = "https://cloud.r-project.org")'
-          Rscript -e 'pak::pkg_install(c("rvest", "dplyr", "stringr", "tibble", "purrr", "readr", "lubridate", "googlesheets4", "gargle"))'
+          Rscript -e 'pak::pkg_install(c("rvest", "dplyr", "stringr", "tibble", "purrr", "readr", "lubridate", "googlesheets4", "gargle", "httr"))'
 
       - name: Verificar pacotes instalados
         run: |
